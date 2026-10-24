@@ -4,28 +4,32 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-attendance}
       POSTGRES_USER: ${POSTGRES_USER:-attendance}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me}
-    ports: ["5432:5432"]
-    volumes: ["postgres_data:/var/lib/postgresql/data"]
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me_locally}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-attendance} -d ${POSTGRES_DB:-attendance}"]
       interval: 5s
       timeout: 3s
-      retries: 15
+      retries: 20
   api:
     build: ./backend
     env_file: .env
     environment:
-      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://attendance:change_me@db:5432/attendance}
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://attendance:change_me_locally@db:5432/attendance}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
-    ports: ["8000:8000"]
+    ports:
+      - "8000:8000"
     depends_on:
-      db: {condition: service_healthy}
+      db:
+        condition: service_healthy
   frontend:
     build: ./frontend
     environment:
       NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000/api/v1}
-    ports: ["3000:3000"]
-    depends_on: [api]
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
 volumes:
   postgres_data:

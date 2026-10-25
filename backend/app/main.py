@@ -1,9 +1,10 @@
 import os
+import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Generator
 
 import jwt
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel
@@ -77,6 +78,11 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     user = db.get(User, user_id)
     if not user or not user.is_active: raise HTTPException(status_code=401, detail="User is inactive or missing")
     return user
+
+class BootstrapAdmin(BaseModel):
+    email: str
+    full_name: str
+    password: str
 
 class SessionCreate(BaseModel):
     class_name: str
@@ -163,13 +169,28 @@ def mark_manual(session_id: int, body: ManualAttendance, db: Session = Depends(g
     db.add(record); db.commit(); db.refresh(record)
     return {"id":record.id,"session_id":session_id,"student_identifier":record.student_identifier,"status":record.status,"method":"manual"}
 
-@app.post("/api/v1/admin/create-user")
-def create_user(email: str, full_name: str, password: str, role: str = "teacher", db: Session = Depends(get_db)):
-    if os.getenv("ALLOW_INSECURE_BOOTSTRAP", "false").lower() != "true": raise HTTPException(status_code=404, detail="Not found")
-    if role not in ("admin","teacher","student","parent"): raise HTTPException(status_code=422, detail="Invalid role")
-    if len(password) < 14: raise HTTPException(status_code=422, detail="Password must be at least 14 characters")
-    email = email.lower().strip()
-    if db.scalar(select(User).where(User.email == email)): raise HTTPException(status_code=409, detail="Email already exists")
-    user = User(email=email, full_name=full_name.strip(), password_hash=password_hash.hash(password), role=role)
-    db.add(user); db.commit(); db.refresh(user)
-    return {"id":user.id,"email":user.email,"role":user.role}
+@app.post("/api/v1/admin/bootstrap", status_code=201)
+def bootstrap_first_admin(
+    body: BootstrapAdmin,
+    x_bootstrap_token: str = Header(default="", alias="X-Bootstrap-Token"),
+    db: Session = Depends(get_db),
+):
+    # This one-time endpoint only works when no admin exists and a secret is configured.
+    configured_token = os.getenv("ADMIN_BOOTSTRAP_TOKEN", "")
+    if not configured_token or not secrets.compare_digest(x_bootstrap_token, configured_token):
+        raise HTTPException(status_code=404, detail="Not found")
+    if db.scalar(select(User).where(User.role == "admin")):
+        raise HTTPException(status_code=409, detail="An admin account already exists")
+    email = body.email.lower().strip()
+    full_name = body.full_name.strip()
+    if not email or not full_name:
+        raise HTTPException(status_code=422, detail="Email and full name are required")
+    if len(body.password) < 14:
+        raise HTTPException(status_code=422, detail="Password must be at least 14 characters")
+    if db.scalar(select(User).where(User.email == email)):
+        raise HTTPException(status_code=409, detail="Email already exists")
+    user = User(email=email, full_name=full_name, password_hash=password_hash.hash(body.password), role="admin")
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return {"id": user.id, "email": user.email, "full_name": user.full_name, "role": user.role}

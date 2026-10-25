@@ -26,6 +26,11 @@ export default function Home() {
   const [token, setToken] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [students, setStudents] = useState<any[]>([]);
+  const [studentId, setStudentId] = useState("");
+  const [studentName, setStudentName] = useState("");
+  const [studentClass, setStudentClass] = useState("");
+  const [studentEmail, setStudentEmail] = useState("");
 
   async function checkHealth() {
     if (!HEALTH_URL) {
@@ -127,6 +132,34 @@ export default function Home() {
     }
   }
 
+  async function loadStudents() {
+    if (!API || !token) { setNotice({ kind: "info", text: "Sign in with an admin or teacher account to view student records." }); return; }
+    setBusy(true);
+    try {
+      const response = await fetch(API + "/students", { headers: { Authorization: "Bearer " + token } });
+      const data = await response.json().catch(() => []);
+      if (!response.ok) { setNotice({ kind: "error", text: data.detail || "Could not load students." }); return; }
+      setStudents(Array.isArray(data) ? data : []);
+      setNotice({ kind: "success", text: "Student list loaded." });
+    } catch { setNotice({ kind: "error", text: "Could not reach the backend while loading students." }); }
+    finally { setBusy(false); }
+  }
+
+  async function addStudent(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!token) { setModal("login"); setNotice({kind:"info",text:"Sign in first to add a student."}); return; }
+    setBusy(true);
+    try {
+      const response = await fetch(API + "/students", { method:"POST", headers:{"Content-Type":"application/json", Authorization:"Bearer "+token}, body:JSON.stringify({student_identifier:studentId, full_name:studentName, class_name:studentClass, email:studentEmail || null}) });
+      const data = await response.json().catch(()=>({}));
+      if (!response.ok) { setNotice({kind:"error",text:data.detail || "Could not add student."}); return; }
+      setStudents(old => [...old, data].sort((a,b)=>a.full_name.localeCompare(b.full_name)));
+      setStudentId(""); setStudentName(""); setStudentClass(""); setStudentEmail("");
+      setNotice({kind:"success",text:"Student added successfully."});
+    } catch { setNotice({kind:"error",text:"Could not reach the backend while adding student."}); }
+    finally { setBusy(false); }
+  }
+
   const filteredNav = useMemo(() => nav.filter(n => n.label.toLowerCase().includes(searchText.toLowerCase())), [searchText]);
 
   function unsupported(feature: string) {
@@ -137,7 +170,8 @@ export default function Home() {
     const Icon = item.icon;
     return <button key={item.label} onClick={() => {
       goTo(item.label);
-      if (item.label === "Students" || item.label === "Classes & subjects" || item.label === "Reports") unsupported(item.label);
+      if (item.label === "Students") void loadStudents();
+      if (item.label === "Classes & subjects" || item.label === "Reports") unsupported(item.label);
     }} className={"navitem w-full text-left " + (activeView === item.label ? "active" : "")}>
       <Icon size={18} />{item.label}
     </button>;
@@ -173,13 +207,24 @@ export default function Home() {
           <div className="mb-7 flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><div className="mb-2 flex items-center gap-2 text-xs font-semibold text-teal-700"><span className="h-2 w-2 rounded-full bg-teal-500"/> YOUR SCHOOL AT A GLANCE</div><h1 className="text-3xl font-extrabold tracking-tight md:text-4xl">Good morning, Admin 👋</h1><p className="mt-2 text-sm text-slate-500">Here&apos;s what&apos;s happening across your campus today.</p></div><button onClick={openSession} className="flex items-center justify-center gap-2 rounded-xl bg-teal-700 px-4 py-3 text-sm font-bold text-white shadow-sm hover:bg-teal-800"><CalendarDays size={17}/> Start attendance session</button></div>
           <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{[{label:"Total students",note:"Student records API not available",icon:Users,color:"bg-blue-50 text-blue-700"},{label:"Present today",note:"Attendance summary API not available",icon:CheckCircle2,color:"bg-teal-50 text-teal-700"},{label:"Attendance rate",note:"Calculated when reports are implemented",icon:Activity,color:"bg-violet-50 text-violet-700"},{label:"Active classes",note:"Class management API not available",icon:BookOpen,color:"bg-amber-50 text-amber-700"}].map(c=><button key={c.label} onClick={() => { goTo(c.label === "Total students" ? "Students" : c.label === "Active classes" ? "Classes & subjects" : "Attendance"); unsupported(c.label); }} className="surface p-5 text-left hover:border-teal-200"><div className="mb-5 flex items-center justify-between"><span className="text-sm text-slate-500">{c.label}</span><span className={"rounded-xl p-2.5 " + c.color}><c.icon size={19}/></span></div><div className="text-3xl font-extrabold">—</div><div className="mt-2 text-xs text-slate-400">{c.note}</div></button>)}</div>
           <div className="grid gap-5 xl:grid-cols-[1.6fr_1fr]"><div className="surface p-5 md:p-6"><div className="mb-6"><h2 className="font-bold">Attendance activity</h2><p className="mt-1 text-xs text-slate-500">Daily attendance will appear when connected to records</p></div><div className="flex h-52 flex-col items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50/70"><div className="mb-3 rounded-full bg-white p-3 text-slate-400 shadow-sm"><Activity size={23}/></div><div className="text-sm font-semibold text-slate-700">Activity chart not yet connected</div><p className="mt-1 text-center text-xs text-slate-400">The backend currently has no dashboard summary endpoint.</p></div><div className="mt-4 flex items-center justify-between gap-2 text-xs text-slate-500"><span className="flex items-center gap-2"><span className={"h-2 w-2 rounded-full " + (apiState === "API connected" ? "bg-teal-500" : "bg-amber-500")}/>{apiState}</span><button onClick={() => void checkHealth()} className="underline">Refresh</button></div></div>
-          <div className="surface p-5 md:p-6"><div className="mb-5 flex items-center justify-between"><h2 className="font-bold">Quick actions</h2><ArrowUpRight size={17} className="text-slate-400"/></div><div className="space-y-3"><button onClick={openSession} className="flex w-full items-center gap-3 rounded-xl border border-slate-100 p-3 text-left hover:border-teal-200"><span className="rounded-xl bg-teal-50 p-3 text-teal-700"><CalendarDays size={18}/></span><span className="flex-1"><span className="block text-sm font-semibold">Take attendance</span><span className="mt-1 block text-xs text-slate-500">Open a class session</span></span><ArrowUpRight size={15}/></button><button onClick={() => { goTo("Students"); unsupported("Student management"); }} className="flex w-full items-center gap-3 rounded-xl border border-slate-100 p-3 text-left hover:border-blue-200"><span className="rounded-xl bg-blue-50 p-3 text-blue-700"><Users size={18}/></span><span className="flex-1"><span className="block text-sm font-semibold">Manage students</span><span className="mt-1 block text-xs text-slate-500">Student API still needs implementation</span></span><ArrowUpRight size={15}/></button><button onClick={() => { goTo("Attendance"); unsupported("Attendance review"); }} className="flex w-full items-center gap-3 rounded-xl border border-slate-100 p-3 text-left hover:border-violet-200"><span className="rounded-xl bg-violet-50 p-3 text-violet-700"><Clock3 size={18}/></span><span className="flex-1"><span className="block text-sm font-semibold">Review attendance</span><span className="mt-1 block text-xs text-slate-500">Attendance record listing needs implementation</span></span><ArrowUpRight size={15}/></button></div><div className="mt-5 rounded-xl bg-amber-50 p-3 text-xs leading-5 text-amber-900"><strong>Important:</strong> Face recognition and liveness detection are not implemented in this starter project.</div></div></div>
+          <div className="surface p-5 md:p-6"><div className="mb-5 flex items-center justify-between"><h2 className="font-bold">Quick actions</h2><ArrowUpRight size={17} className="text-slate-400"/></div><div className="space-y-3"><button onClick={openSession} className="flex w-full items-center gap-3 rounded-xl border border-slate-100 p-3 text-left hover:border-teal-200"><span className="rounded-xl bg-teal-50 p-3 text-teal-700"><CalendarDays size={18}/></span><span className="flex-1"><span className="block text-sm font-semibold">Take attendance</span><span className="mt-1 block text-xs text-slate-500">Open a class session</span></span><ArrowUpRight size={15}/></button><button onClick={() => { goTo("Students"); void loadStudents(); }} className="flex w-full items-center gap-3 rounded-xl border border-slate-100 p-3 text-left hover:border-blue-200"><span className="rounded-xl bg-blue-50 p-3 text-blue-700"><Users size={18}/></span><span className="flex-1"><span className="block text-sm font-semibold">Manage students</span><span className="mt-1 block text-xs text-slate-500">Student API still needs implementation</span></span><ArrowUpRight size={15}/></button><button onClick={() => { goTo("Attendance"); unsupported("Attendance review"); }} className="flex w-full items-center gap-3 rounded-xl border border-slate-100 p-3 text-left hover:border-violet-200"><span className="rounded-xl bg-violet-50 p-3 text-violet-700"><Clock3 size={18}/></span><span className="flex-1"><span className="block text-sm font-semibold">Review attendance</span><span className="mt-1 block text-xs text-slate-500">Attendance record listing needs implementation</span></span><ArrowUpRight size={15}/></button></div><div className="mt-5 rounded-xl bg-amber-50 p-3 text-xs leading-5 text-amber-900"><strong>Important:</strong> Face recognition and liveness detection are not implemented in this starter project.</div></div></div>
         </>}
 
         {activeView !== "Overview" && <div className="surface p-6 md:p-8"><h1 className="text-2xl font-extrabold">{activeView}</h1>
           {activeView === "Attendance" ? <><p className="mt-2 text-sm text-slate-500">Create an attendance session using the backend API. You must sign in first.</p><button onClick={openSession} className="mt-5 rounded-xl bg-teal-700 px-4 py-3 text-sm font-bold text-white">Start attendance session</button></> :
           activeView === "Settings" ? <><p className="mt-2 text-sm text-slate-500">Frontend connection status and sign-in settings.</p><p className="mt-4 text-sm">API status: <strong>{apiState}</strong></p><p className="mt-2 break-all text-xs text-slate-500">Configured API: {API || "Not configured — set NEXT_PUBLIC_API_BASE_URL in Render"}</p><button onClick={() => void checkHealth()} className="mt-4 rounded-xl border px-4 py-2 text-sm"><RefreshCw size={15} className="mr-2 inline"/>Test API</button><button onClick={() => setModal("login")} className="ml-2 mt-4 rounded-xl border px-4 py-2 text-sm">Sign in</button></> :
-          <><p className="mt-2 text-sm text-slate-500">This feature is not yet implemented in the backend. The current API does not provide student management, class management, or report endpoints.</p><button onClick={() => setNotice({kind:"info",text:"This requires adding database models and secure API routes before the feature can work."})} className="mt-5 rounded-xl border px-4 py-2 text-sm">View implementation status</button></>}
+          {activeView === "Students" ? <div className="mt-4 space-y-5">
+            <p className="text-sm text-slate-500">Manage student records. Sign in with an admin or teacher account first.</p>
+            <form onSubmit={addStudent} className="grid gap-3 rounded-xl border border-slate-200 p-4 sm:grid-cols-2">
+              <label className="text-sm font-medium">Student ID *<input required value={studentId} onChange={e=>setStudentId(e.target.value)} className="mt-1 w-full rounded-lg border p-3" placeholder="e.g. BCA001"/></label>
+              <label className="text-sm font-medium">Full name *<input required value={studentName} onChange={e=>setStudentName(e.target.value)} className="mt-1 w-full rounded-lg border p-3" placeholder="Student full name"/></label>
+              <label className="text-sm font-medium">Class *<input required value={studentClass} onChange={e=>setStudentClass(e.target.value)} className="mt-1 w-full rounded-lg border p-3" placeholder="e.g. BCA Year 1"/></label>
+              <label className="text-sm font-medium">Email (optional)<input type="email" value={studentEmail} onChange={e=>setStudentEmail(e.target.value)} className="mt-1 w-full rounded-lg border p-3" placeholder="student@example.com"/></label>
+              <button disabled={busy} className="rounded-xl bg-teal-700 p-3 font-bold text-white disabled:opacity-50 sm:col-span-2">{busy ? "Saving…" : "Add student"}</button>
+            </form>
+            <div className="flex items-center justify-between"><h2 className="font-bold">Student records ({students.length})</h2><button onClick={() => void loadStudents()} disabled={busy} className="rounded-lg border px-3 py-2 text-sm"><RefreshCw size={14} className="mr-1 inline"/> Refresh list</button></div>
+            {students.length === 0 ? <p className="rounded-xl border border-dashed p-5 text-sm text-slate-500">No students loaded yet. Sign in and tap Refresh list.</p> : <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead><tr className="border-b text-slate-500"><th className="p-3">Student ID</th><th className="p-3">Name</th><th className="p-3">Class</th><th className="p-3">Email</th></tr></thead><tbody>{students.map(s=><tr key={s.id} className="border-b border-slate-100"><td className="p-3">{s.student_identifier}</td><td className="p-3">{s.full_name}</td><td className="p-3">{s.class_name}</td><td className="p-3">{s.email || "—"}</td></tr>)}</tbody></table></div>}
+          </div> : <><p className="mt-2 text-sm text-slate-500">This feature is not yet implemented in the backend. Class management and reports still require implementation.</p><button onClick={() => setNotice({kind:"info",text:"Class management and reporting require additional database models and API routes."})} className="mt-5 rounded-xl border px-4 py-2 text-sm">View implementation status</button></>}}
         </div>}
         <footer className="mt-7 flex flex-col justify-between gap-2 border-t border-slate-200 py-5 text-xs text-slate-400 sm:flex-row"><span>© 2026 Attendly Campus Workspace</span><span>Student records, reporting and face recognition require further implementation.</span></footer>
       </div>

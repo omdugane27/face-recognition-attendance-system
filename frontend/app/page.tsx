@@ -7,7 +7,7 @@ import {
   ShieldCheck, Users, Bell, Fingerprint, Menu, X, RefreshCw, LogIn
 } from "lucide-react";
 
-const API = (process.env.NEXT_PUBLIC_API_BASE_URL || "").replace(/\/$/, "");
+const API = (process.env.NEXT_PUBLIC_API_BASE_URL || "https://face-recognition-attendance-system-3-7fc5.onrender.com/api/v1").replace(/\/$/, "");
 const HEALTH_URL = API ? API.replace(/\/api\/v1$/, "") + "/health" : "";
 
 type View = "Overview" | "Attendance" | "Students" | "Classes & subjects" | "Reports" | "Roles & permissions" | "Settings";

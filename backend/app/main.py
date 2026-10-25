@@ -30,6 +30,15 @@ class User(Base):
     role: Mapped[str] = mapped_column(String(20), default="teacher")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
+class Student(Base):
+    __tablename__ = "students"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    student_identifier: Mapped[str] = mapped_column(String(100), unique=True, index=True)
+    full_name: Mapped[str] = mapped_column(String(160))
+    email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    class_name: Mapped[str] = mapped_column(String(120), index=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
 class AttendanceSession(Base):
     __tablename__ = "attendance_sessions"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -73,6 +82,12 @@ class SessionCreate(BaseModel):
     class_name: str
     subject: str
 
+class StudentCreate(BaseModel):
+    student_identifier: str
+    full_name: str
+    class_name: str
+    email: str | None = None
+
 class ManualAttendance(BaseModel):
     student_identifier: str
     status: str = "present"
@@ -92,6 +107,39 @@ def login(form: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get
 @app.get("/api/v1/auth/me")
 def me(user: User = Depends(get_current_user)):
     return {"id":user.id, "email":user.email, "full_name":user.full_name, "role":user.role}
+
+@app.get("/api/v1/students")
+def list_students(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    rows = db.scalars(select(Student).order_by(Student.full_name).limit(500)).all()
+    return [{"id": r.id, "student_identifier": r.student_identifier, "full_name": r.full_name, "email": r.email, "class_name": r.class_name, "is_active": r.is_active} for r in rows]
+
+@app.post("/api/v1/students", status_code=201)
+def create_student(body: StudentCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    if user.role not in ("admin", "teacher"):
+        raise HTTPException(status_code=403, detail="Only admins and teachers can manage students")
+    identifier = body.student_identifier.strip()
+    full_name = body.full_name.strip()
+    class_name = body.class_name.strip()
+    if not identifier or not full_name or not class_name:
+        raise HTTPException(status_code=422, detail="Student ID, full name, and class are required")
+    if db.scalar(select(Student).where(Student.student_identifier == identifier)):
+        raise HTTPException(status_code=409, detail="Student ID already exists")
+    row = Student(student_identifier=identifier, full_name=full_name, class_name=class_name, email=(body.email or "").strip() or None)
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return {"id": row.id, "student_identifier": row.student_identifier, "full_name": row.full_name, "email": row.email, "class_name": row.class_name, "is_active": row.is_active}
+
+@app.delete("/api/v1/students/{student_id}")
+def delete_student(student_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    if user.role != "admin":
+        raise HTTPException(status_code=403, detail="Only admins can delete students")
+    row = db.get(Student, student_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Student not found")
+    row.is_active = False
+    db.commit()
+    return {"status": "deactivated", "id": row.id}
 
 @app.get("/api/v1/attendance/sessions")
 def list_sessions(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
